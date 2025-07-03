@@ -37,3 +37,7 @@ constexpr int NUM_CHANNELS = 1;
 // utilizado para capturar e processar o áudio.
 constexpr int AUDIO_BUFFER_SIZE =
     FRAMES_PER_BUFFER * NUM_CHANNELS * SAMPLE_SIZE;
+
+
+// Define a porta padrão para o servidor de áudio
+constexpr int PORT = 12345;
