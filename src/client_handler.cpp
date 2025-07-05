@@ -25,6 +25,73 @@ std::condition_variable cv;
 // áudio.
 AudioHandler audio_handler;
 
+// Função para descobrir o IP do servidor na rede local.
+std::string discover_server_on_network() {
+    std::cout << "IP do servidor não fornecido. Procurando na rede local..."
+              << std::endl;
+
+    // Cria um socket para enviar pacotes de broadcast
+    int broadcast_sock = socket(AF_INET, SOCK_DGRAM, 0);
+    if (broadcast_sock < 0) {
+        perror("Erro ao criar socket de broadcast");
+        return "";
+    }
+
+    // Habilitar a opção de broadcast no socket
+    int broadcast_enable = 1;
+    if (setsockopt(broadcast_sock, SOL_SOCKET, SO_BROADCAST, &broadcast_enable,
+                   sizeof(broadcast_enable)) < 0) {
+        perror("Erro ao configurar socket para broadcast");
+        close(broadcast_sock);
+        return "";
+    }
+
+    // Definir um timeout para a resposta do servidor
+    struct timeval tv = {5, 0};  // 5 segundos de timeout
+    setsockopt(broadcast_sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+
+    // Declara a estrutura de endereço para o broadcast
+    sockaddr_in broadcast_addr{};
+    broadcast_addr.sin_family = AF_INET;    // Define o tipo de endereço (IPv4)
+    broadcast_addr.sin_port = htons(PORT);  // Define a porta do servidor
+    // Endereço de broadcast
+    broadcast_addr.sin_addr.s_addr = inet_addr("255.255.255.255");
+
+    // Monta e envia o pacote de descoberta.
+    // O primeiro byte é o tipo do pacote (DISCOVERY_REQUEST) e o restante é
+    // vazio, pois não há dados adicionais.
+    char discovery_packet = DISCOVERY_REQUEST;
+    sendto(broadcast_sock, &discovery_packet, sizeof(discovery_packet), 0,
+           (sockaddr*)&broadcast_addr, sizeof(broadcast_addr));
+
+    // Monta um buffer para receber a resposta do servidor.
+    char response_buffer[1];
+    // Estrutura para armazenar o endereço do servidor que respondeu.
+    sockaddr_in server_response_addr{};
+    socklen_t server_addr_len = sizeof(server_response_addr);
+
+    // Espera pela resposta do servidor, preenche o buffer de resposta e salva
+    // o endereço do servidor que respondeu.
+    ssize_t n =
+        recvfrom(broadcast_sock, response_buffer, sizeof(response_buffer), 0,
+                 (sockaddr*)&server_response_addr, &server_addr_len);
+
+    // Fecha o socket de broadcast após receber a resposta ou timeout.
+    close(broadcast_sock);
+
+    // Se foi um pacote válido e o primeiro byte é DISCOVERY_RESPONSE,
+    // extrai o IP do servidor e retorna.
+    if (n > 0 && response_buffer[0] == DISCOVERY_RESPONSE) {
+        std::string server_ip = inet_ntoa(server_response_addr.sin_addr);
+        std::cout << "Servidor encontrado em: " << server_ip << std::endl;
+        return server_ip;
+    }
+
+    // Se não foi recebido nenhum pacote válido, imprime uma mensagem de erro.
+    std::cerr << "Nenhum servidor encontrado na rede." << std::endl;
+    return "";
+}
+
 // Função para suprimir erros do ALSA.
 void suppress_alsa_errors(bool suppress) {
     static int stderr_original_fd = -1;

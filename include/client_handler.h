@@ -32,6 +32,9 @@ extern std::mutex jitter_buffer_mutex;
 // recursos do sistema.
 extern std::condition_variable cv;
 
+// Função para descobrir o IP do servidor na rede local.
+std::string discover_server_on_network();
+
 // Declaração da função para suprimir erros, necessário para os erros  que o
 // PortAudio lança ao tentar encontrar os dispositivos de áudio
 void suppress_alsa_errors(bool suppress);

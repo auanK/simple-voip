@@ -155,6 +155,16 @@ void handle_received_packet(int sock, const std::vector<char>& buffer,
         case AUDIO_DATA:
             process_audio_data(sock, data, sender_addr, clients);
             break;
+        // Pacote de descobrimento
+        case DISCOVERY_REQUEST: {
+            std::cout << "Recebido pedido de descoberta de ";
+            print_client_info("", sender_addr);
+
+            char response_packet = DISCOVERY_RESPONSE;
+            sendto(sock, &response_packet, sizeof(response_packet), 0,
+                   (sockaddr*)&sender_addr, sender_len);
+            break;
+        }
         default:
             break;
     }

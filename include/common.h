@@ -41,7 +41,7 @@ constexpr int AUDIO_BUFFER_SIZE =
 // Define a porta padrão para o servidor de áudio
 constexpr int PORT = 12345;
 
-// Tempo máximo de espera para receber pacotes do servidor  
+// Tempo máximo de espera para receber pacotes do servidor
 constexpr int CLIENT_TIMEOUT_SEC = 15;
 
 // Define o tamanho máximo para o nome do cliente
@@ -49,9 +49,11 @@ constexpr int MAX_NAME_LENGTH = 50;
 
 // Define um protocolo simples com um cabeçalho de 1 byte
 enum PacketType : char {
-    LOGIN_REQUEST = 0x01,   // Cliente envia nome para conectar
-    AUDIO_DATA = 0x02,      // Pacote de áudio
-    SERVER_MESSAGE = 0x03,  // Servidor envia notificação
-    LOGIN_OK = 0x04,        // Servidor confirma conexão
-    SERVER_FULL = 0x05      // Servidor informa que está cheio
+    LOGIN_REQUEST = 0x01,      // Cliente envia nome para conectar
+    AUDIO_DATA = 0x02,         // Pacote de áudio
+    SERVER_MESSAGE = 0x03,     // Servidor envia notificação
+    LOGIN_OK = 0x04,           // Servidor confirma conexão
+    SERVER_FULL = 0x05,        // Servidor informa que está cheio
+    DISCOVERY_REQUEST = 0x06,  // Cliente procura por um servidor
+    DISCOVERY_RESPONSE = 0x07  // Servidor responde que está ativo
 };

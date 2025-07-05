@@ -13,19 +13,31 @@ extern AudioHandler audio_handler;
 
 // Função principal do cliente
 int main(int argc, char* argv[]) {
-    // Verifica se o endereço IP do servidor e o nome do cliente foram passados
-    // como argumentos.
-    if (argc < 3) {
-        std::cerr << "Uso: " << argv[0] << " <IP do servidor> <seu_nome>"
+    // Verifica se tem argumentos suficientes
+    if (argc < 2) {
+        std::cerr << "Uso: " << argv[0] << " <seu_nome> [IP do servidor]"
+                  << std::endl;
+        std::cerr << "Se o IP do servidor não for fornecido, "
+                     "será feita uma busca na rede local."
                   << std::endl;
         return 1;
     }
 
-    // Salva o endereço IP do servidor e o nome do cliente.
-    const std::string server_ip = argv[1];
-    const std::string client_name = argv[2];
+    // Salva o nome do cliente
+    const std::string client_name = argv[1];
 
-    // Tamanho máximo do nome do cliente
+    // Salva o IP do servidor se fornecido, ou descobre na rede local
+    std::string server_ip;
+    if (argc > 2) {
+        server_ip = argv[2];
+    } else {
+        server_ip = discover_server_on_network();
+        if (server_ip.empty()) {
+            return 1;
+        }
+    }
+
+    // Verifica se o nome do cliente é válido
     if (client_name.length() > MAX_NAME_LENGTH) {
         std::cerr << "O nome deve ter no máximo " << MAX_NAME_LENGTH
                   << " caracteres." << std::endl;
@@ -85,7 +97,7 @@ int main(int argc, char* argv[]) {
     std::thread player(playback_thread_func);
 
     // Aguardando o usuário pressionar Enter para encerrar o programa.
-    std::cout << "\n*** Comunicação ativa. Pressione Enter para sair. ***\n";
+    std::cout << "\n*** Pressione Enter para sair. ***\n";
     std::cin.get();
 
     std::cout << "Encerrando as threads..." << std::endl;
