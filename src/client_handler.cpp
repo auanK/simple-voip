@@ -27,7 +27,7 @@ using socklen_t = int;
 std::atomic<bool> running(false);
 std::queue<std::vector<char>> jitter_buffer;
 std::mutex jitter_buffer_mutex;
-std::condition_variable cv;
+std::condition_variable jitter_buffer_cond;
 
 // Instância do motor de áudio em audio.h, responsável por capturar e reproduzir
 // áudio.
@@ -195,8 +195,14 @@ void receive_thread_func(int sock, std::promise<void> connection_promise) {
 #endif
             // A conexão caiu
             if (connection_confirmed) {
-                std::cerr << "\n[INFO] Conexão perdida. O servidor desconectou."
-                          << std::endl;
+                if (is_timeout) {
+                    std::cerr
+                        << "\n[INFO] Conexão perdida. O servidor desconectou."
+                        << std::endl;
+                } else {
+                    perror("Erro de rede fatal. Encerrando");
+                }
+                std::exit(1);
             }
             // A tentativa de conexão inicial falhou.
             else {
@@ -204,7 +210,6 @@ void receive_thread_func(int sock, std::promise<void> connection_promise) {
                     std::cerr << "\n[FALHA] O servidor não respondeu."
                               << std::endl;
                 } else {
-                    // Outro erro na rede
                     perror("Erro em recvfrom");
                 }
 
@@ -233,7 +238,8 @@ void receive_thread_func(int sock, std::promise<void> connection_promise) {
         if (!connection_confirmed &&
             (type == LOGIN_OK || type == SERVER_MESSAGE)) {
             connection_confirmed = true;
-            std::cout << "\n*** Conexão estabelecida! ***" << std::endl;
+            std::cout << "\n*** Conexão estabelecida! ***" << std::endl
+                      << "Pressione Enter para encerrar." << std::endl;
 
             // Cumpre a promessa para notificar a thread principal
             connection_promise.set_value();
@@ -251,7 +257,7 @@ void receive_thread_func(int sock, std::promise<void> connection_promise) {
                 jitter_buffer.emplace(data_view.begin(), data_view.end());
 
                 // Avisa a thread de playback que há novos pacotes disponíveis.
-                cv.notify_one();
+                jitter_buffer_cond.notify_one();
                 break;
             }
             // Imprime uma mensagem do servidor.
@@ -276,7 +282,7 @@ void receive_thread_func(int sock, std::promise<void> connection_promise) {
                 break;
         }
     }
-    cv.notify_all();  // Notifica a todas as threads
+    jitter_buffer_cond.notify_all();  // Notifica a thread de playback
     std::cout << "Recepção de áudio terminada." << std::endl;
 }
 
@@ -297,7 +303,8 @@ void playback_thread_func() {
 
             // A thread dorme até ser notificada, quando o buffer não está vazio
             // ou o programa está encerrando.
-            cv.wait(lock, [] { return !jitter_buffer.empty() || !running; });
+            jitter_buffer_cond.wait(
+                lock, [] { return !jitter_buffer.empty() || !running; });
 
             // Se a thread acordou e não está mais rodando, e não contém
             // pacotes no jitter_buffer, sai do loop.

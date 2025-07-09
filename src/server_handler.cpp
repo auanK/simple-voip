@@ -72,13 +72,6 @@ bool are_addresses_equal(const sockaddr_in& addr1, const sockaddr_in& addr2) {
            addr1.sin_port == addr2.sin_port;
 }
 
-// Função auxiliar para enviar pacotes
-void send_packet(int sock, const std::vector<char>& packet,
-                 const sockaddr_in& dest_addr, socklen_t dest_len) {
-    sendto(sock, packet.data(), packet.size(), 0, (sockaddr*)&dest_addr,
-           dest_len);
-}
-
 // Função para notificar todos os clientes
 void broadcast_server_message(int sock, const std::string& message,
                               ClientInfo clients[2],
@@ -93,8 +86,8 @@ void broadcast_server_message(int sock, const std::string& message,
     // Envia a mensagem para todos os clientes, exceto o cliente excluído
     for (int i = 0; i < 2; ++i) {
         if (i != exclude_client_index && clients[i].is_active) {
-            send_packet(sock, msg_packet, clients[i].address,
-                        clients[i].address_len);
+            sendto(sock, msg_packet.data(), msg_packet.size(), 0,
+                   (sockaddr*)&clients[i].address, clients[i].address_len);
         }
     }
 }
@@ -123,7 +116,9 @@ void process_login(int sock, std::string_view name,
         print_client_info("Cliente conectado:", sender_addr, std::string(name));
 
         // Envia um pacote de confirmação de login para o novo cliente
-        send_packet(sock, {LOGIN_OK}, sender_addr, sender_len);
+        const char login_ok_packet = LOGIN_OK;
+        sendto(sock, &login_ok_packet, sizeof(login_ok_packet), 0,
+               (sockaddr*)&sender_addr, sender_len);
 
         // Envia uma mensagem para todos os clientes informando sobre a nova
         // conexão
@@ -140,12 +135,15 @@ void process_login(int sock, std::string_view name,
             msg_packet.push_back(SERVER_MESSAGE);
             msg_packet.insert(msg_packet.end(), current_user_msg.begin(),
                               current_user_msg.end());
-            send_packet(sock, msg_packet, sender_addr, sender_len);
+            sendto(sock, msg_packet.data(), msg_packet.size(), 0,
+                   (sockaddr*)&sender_addr, sender_len);
         }
     }
     // Caso não haja slot livre, informa que o servidor está cheio
     else {
-        send_packet(sock, {SERVER_FULL}, sender_addr, sender_len);
+        const char server_full_packet = SERVER_FULL;
+        sendto(sock, &server_full_packet, sizeof(server_full_packet), 0,
+               (sockaddr*)&sender_addr, sender_len);
         print_client_info("Tentativa de conexão rejeitada (servidor cheio):",
                           sender_addr, std::string(name));
     }

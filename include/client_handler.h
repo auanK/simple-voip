@@ -19,23 +19,16 @@
 // Interruptor geral de todas as threads
 extern std::atomic<bool> running;
 
-// Variável que armazena pacotes de áudio recebidos.
-// Cada pacote é um vetor de caracteres, representando um bloco de áudio.
-// A thread de recebimento coloca pacotes aqui, e a thread de playback
-// retira para tocar.
+// Armazena os pacotes de áudio recebidos do servidor.
 extern std::queue<std::vector<char>> jitter_buffer;
 
 // A variável mutex bloqueia o acesso ao jitter_buffer enquanto uma
-// thread está adicionando ou removendo pacotes, garantindo que apenas uma
-// thread possa modificar a fila por vez, evitando erros como corrupção de
-// dados ou comportamento inesperado.
+// thread está adicionando ou removendo pacotes.
 extern std::mutex jitter_buffer_mutex;
 
-// A thread de recebimento toca a campainha quando um novo pacote chega,
-// acordando a thread de playback para que ela possa processar o pacote.
-// Evita que a thread de playback fique acordada o tempo todo, economizando
-// recursos do sistema.
-extern std::condition_variable cv;
+// A variável condition_variable é usada para notificar a thread de
+// reprodução de áudio quando novos pacotes estão disponíveis no jitter_buffer.
+extern std::condition_variable jitter_buffer_cond;
 
 // Função para descobrir o IP do servidor na rede local.
 std::string discover_server_on_network();

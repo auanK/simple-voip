@@ -187,7 +187,7 @@ int main(int argc, char* argv[]) {
 
     // Caso a thread de playback esteja esperando por novos pacotes,
     // notifica-a para que ela possa sair do loop.
-    cv.notify_all();
+    jitter_buffer_cond.notify_all();
 
     // Aguarda as threads terminarem.
     // A função join bloqueia a thread principal até que a thread especificada
