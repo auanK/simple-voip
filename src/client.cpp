@@ -1,7 +1,9 @@
 #ifdef _WIN32
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#ifdef _MSC_VER
 #pragma comment(lib, "ws2_32.lib")
+#endif
 #else
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -19,6 +21,12 @@
 
 // Instância global do motor de áudio (definida no client_utils.cpp)
 extern AudioHandler audio_handler;
+
+// Função que aguarda o usuário pressionar Enter para encerrar o programa.
+void wait_for_enter() {
+    std::cin.get();
+    running = false;
+}
 
 // Função principal do cliente
 int main(int argc, char* argv[]) {
@@ -118,20 +126,64 @@ int main(int argc, char* argv[]) {
     // Flag para controlar a execução das threads.
     running = true;
 
-    // Inicia as threads de envio, recebimento e reprodução de áudio.
-    // Cada thread é responsável por uma parte do processo de comunicação:
-    std::thread receiver(receive_thread_func, sock);
-    std::thread sender(send_thread_func, sock, server_addr);
-    std::thread player(playback_thread_func);
+    // Cria a promessa e o futuro para sincronizar a conexão.
+    // A promessa é usada para notificar a thread principal quando a conexão
+    // for estabelecida, enquanto o futuro é usado para aguardar essa
+    // notificação na thread principal.
+    std::promise<void> connection_promise;
+    std::future<void> connection_future = connection_promise.get_future();
 
-    // Aguardando o usuário pressionar Enter para encerrar o programa.
-    std::cout << "\n*** Pressione Enter para sair. ***\n";
-    std::cin.get();
+    // Inicia primeiro a thread de recebimento para que ela possa processar a
+    // resposta do servidor antes de enviar pacotes de áudio ou reproduzir
+    // áudio.
+    std::thread receiver(receive_thread_func, sock,
+                         std::move(connection_promise));
 
-    std::cout << "Encerrando as threads..." << std::endl;
+    // Declara as threads de envio e reprodução.
+    std::thread sender, player;
 
-    // Com a flag em false os loops das threads vão terminar.
-    running = false;
+    try {
+        // Esperando a thread de recebimento confirmar a conexão com o servidor.
+        std::cout << "Aguardando confirmação do servidor..." << std::endl;
+        connection_future.get();
+
+        // Inicia a thread de envio e a thread de reprodução de áudio.
+        sender = std::thread(send_thread_func, sock, server_addr);
+        player = std::thread(playback_thread_func);
+
+    } catch (const std::exception& e) {
+        // Se ocorrer um erro ao estabelecer a conexão, exibe a mensagem de erro
+        // e encerra as threads.
+        std::cerr << "\n[ERRO] Não foi possível estabelecer a conexão."
+                  << std::endl;
+        running = false;
+        receiver.join();
+
+        // Limpa o socket
+#ifdef _WIN32
+        closesocket(sock);
+        WSACleanup();
+#else
+        close(sock);
+#endif
+        return 1;
+    }
+
+    // Inicia a thread que aguarda o usuário pressionar Enter para encerrar o
+    // programa.
+    std::thread input_thread(wait_for_enter);
+    input_thread.detach();
+
+    // Dorme a thread principal a cada 1000 milissegundos para economizar
+    // recursos do sistema.
+    while (running) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+    }
+
+    // Informa para o servidor que o cliente vai se desconectar.
+    char logout_packet = LOGOUT_NOTICE;
+    sendto(sock, &logout_packet, sizeof(logout_packet), 0,
+           (sockaddr*)&server_addr, sizeof(server_addr));
 
     // Caso a thread de playback esteja esperando por novos pacotes,
     // notifica-a para que ela possa sair do loop.

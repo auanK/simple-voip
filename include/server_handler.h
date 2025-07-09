@@ -7,8 +7,10 @@ using socklen_t = int;
 #include <arpa/inet.h>
 #endif
 
+#include <atomic>
 #include <chrono>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "common.h"
@@ -24,8 +26,14 @@ struct ClientInfo {
     std::chrono::steady_clock::time_point last_packet_time;
 };
 
+// Interruptor para controlar o loop do servidor
+extern std::atomic<bool> running;
+
+// Gerencia o loop principal do servidor
+void server_loop(int sock);
+
 // Processa um pacote recebido de um cliente.
-void handle_received_packet(int sock, const std::vector<char>& buffer,
+void handle_received_packet(int sock, const std::string_view& buffer,
                             const sockaddr_in& sender_addr,
                             socklen_t sender_len, ClientInfo clients[2]);
 

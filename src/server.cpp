@@ -1,7 +1,11 @@
 #ifdef _WIN32
 #include <winsock2.h>
 #include <ws2tcpip.h>
+
+#ifdef _MSC_VER
 #pragma comment(lib, "ws2_32.lib")
+#endif
+
 using socklen_t = int;
 #else
 #include <netinet/in.h>
@@ -9,7 +13,9 @@ using socklen_t = int;
 #include <unistd.h>
 #endif
 
+#include <atomic>
 #include <iostream>
+#include <thread>
 #include <vector>
 
 #include "common.h"
@@ -50,50 +56,18 @@ int main() {
         return 1;
     }
 
-    std::cout << "Servidor de áudio iniciado na porta " << PORT
-              << ". Aguardando clientes..." << std::endl;
+    // Inicia o loop do servidor em uma thread separada
+    running = true;
+    std::thread server_thread(server_loop, sock);
 
-    // Vetor para armazenar informações dos clientes
-    ClientInfo clients[2] = {};
+    // Aguarda o Enter do utilizador
+    std::cin.get();
 
-    // Buffer para receber pacotes de áudio
-    // (O primeiro byte é usado para indicar o tipo de pacote)
-    std::vector<char> buffer(1 + AUDIO_BUFFER_SIZE);
+    std::cout << "A encerrar o servidor..." << std::endl;
+    running = false;
 
-    // Loop principal do servidor
-    while (true) {
-        // fd_set é uma estrutura usada pela função select() para monitorar
-        // sockets
-        fd_set read_fds;
-        FD_ZERO(&read_fds);       // Limpa o conjunto de sockets
-        FD_SET(sock, &read_fds);  // Adiciona o socket do servidor ao conjunto
-
-        // Define o tempo de espera para a função select()
-        // Se nada acontecer em 1 segundo, select() retorna
-        struct timeval tv = {1, 0};
-
-        // select() bloqueia o programa até que haja dados para ler
-        // ou até que o tempo limite expire
-        if (select(sock + 1, &read_fds, nullptr, nullptr, &tv) > 0) {
-            // Armazena as informações de quem enviou o pacote
-            sockaddr_in sender_addr{};
-            socklen_t len = sizeof(sender_addr);
-
-            // Recebe o pacote de áudio do cliente e armazena no buffer
-            ssize_t n = recvfrom(sock, buffer.data(), buffer.size(), 0,
-                                 (sockaddr*)&sender_addr, &len);
-
-            // Se os dados foram recebidos com sucesso
-            if (n > 0) {
-                // Envia o pacote recebido para a função que lida com o pacote
-                std::vector<char> packet(buffer.begin(), buffer.begin() + n);
-                handle_received_packet(sock, packet, sender_addr, len, clients);
-            }
-        }
-
-        // Verifica se os clientes estão inativos e os desconecta se necessário
-        check_client_timeouts(sock, clients);
-    }
+    // Aguarda a thread do servidor terminar
+    server_thread.join();
 
 // Fecha o socket antes de sair
 #ifdef _WIN32
@@ -102,6 +76,8 @@ int main() {
 #else
     close(sock);
 #endif
+
+    std::cout << "Servidor encerrado." << std::endl;
 
     return 0;
 }

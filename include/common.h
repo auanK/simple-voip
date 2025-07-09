@@ -47,13 +47,18 @@ constexpr int CLIENT_TIMEOUT_SEC = 15;
 // Define o tamanho máximo para o nome do cliente
 constexpr int MAX_NAME_LENGTH = 50;
 
+// Tempo de espera para encontrar o servidor na rede local
+constexpr int DISCOVERY_TIMEOUT_SEC = 10;
+
 // Define um protocolo simples com um cabeçalho de 1 byte
 enum PacketType : char {
-    LOGIN_REQUEST = 0x01,      // Cliente envia nome para conectar
-    AUDIO_DATA = 0x02,         // Pacote de áudio
-    SERVER_MESSAGE = 0x03,     // Servidor envia notificação
-    LOGIN_OK = 0x04,           // Servidor confirma conexão
-    SERVER_FULL = 0x05,        // Servidor informa que está cheio
-    DISCOVERY_REQUEST = 0x06,  // Cliente procura por um servidor
-    DISCOVERY_RESPONSE = 0x07  // Servidor responde que está ativo
+    LOGIN_REQUEST = 0x01,       // Cliente envia nome para conectar
+    AUDIO_DATA = 0x02,          // Pacote de áudio
+    SERVER_MESSAGE = 0x03,      // Servidor envia notificação
+    LOGIN_OK = 0x04,            // Servidor confirma conexão
+    SERVER_FULL = 0x05,         // Servidor informa que está cheio
+    DISCOVERY_REQUEST = 0x06,   // Cliente procura por um servidor
+    DISCOVERY_RESPONSE = 0x07,  // Servidor responde que está ativo
+    KEEPALIVE_PONG = 0x08,      // Ping para manter a conexão ativa
+    LOGOUT_NOTICE = 0x09,       // Cliente avisa desconexão
 };

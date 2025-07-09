@@ -8,6 +8,7 @@
 
 #include <atomic>
 #include <condition_variable>
+#include <future>
 #include <mutex>
 #include <queue>
 #include <string>
@@ -46,7 +47,7 @@ void suppress_alsa_errors(bool suppress);
 // Função responsável por receber pacotes de áudio do servidor e
 // colocá-los no jitter buffer, que é uma fila de pacotes a serem
 // reproduzidos. Ela recebe o socket como parâmetro.
-void receive_thread_func(int sock);
+void receive_thread_func(int sock, std::promise<void> connection_promise);
 
 // Função responsável por capturar áudio do microfone e enviá-lo para o
 // servidor, recebe o socket e o endereço do servidor como parâmetros.

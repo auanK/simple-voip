@@ -7,9 +7,64 @@
 #include <unistd.h>
 #endif
 
+#include <atomic>
 #include <cstring>
 #include <iostream>
 #include <string_view>
+#include <vector>
+
+std::atomic<bool> running;
+
+// Gerencia o loop principal do servidor
+void server_loop(int sock) {
+    std::cout << "Servidor de áudio iniciado na porta " << PORT
+              << ". Pressione Enter para encerrar." << std::endl;
+
+    // Vetor para armazenar informações dos clientes
+    ClientInfo clients[2] = {};
+
+    // Buffer para receber pacotes de áudio
+    // (O primeiro byte é usado para indicar o tipo de pacote)
+    std::vector<char> buffer(1 + AUDIO_BUFFER_SIZE);
+
+    // Loop principal do servidor
+    while (running) {
+        // fd_set é uma estrutura usada pela função select() para monitorar
+        // sockets
+        fd_set read_fds;
+        FD_ZERO(&read_fds);       // Limpa o conjunto de sockets
+        FD_SET(sock, &read_fds);  // Adiciona o socket do servidor ao conjunto
+
+        // Define o tempo de espera para a função select()
+        // Se nada acontecer em 1 segundo, a função retorna
+        struct timeval tv = {1, 0};
+
+        // Select aguarda atividade no socket do servidor
+        // ou até que o tempo limite expire
+        int activity = select(sock + 1, &read_fds, nullptr, nullptr, &tv);
+
+        // Se houver atividade no socket do servidor
+        if (activity > 0) {
+            // Armazena as informaçÕes de quem enviou o pacote
+            sockaddr_in sender_addr{};
+            socklen_t len = sizeof(sender_addr);
+
+            // Recebe o pacote de áudio do cliente e armazena no buffer
+            ssize_t n = recvfrom(sock, buffer.data(), buffer.size(), 0,
+                                 (sockaddr*)&sender_addr, &len);
+
+            // Se recebeu um pacote envia para a função de tratamento
+            if (n > 0) {
+                std::string_view packet_view(buffer.data(), n);
+                handle_received_packet(sock, packet_view, sender_addr, len,
+                                       clients);
+            }
+        }
+
+        // Verifica se os clientes estão inativos e desconecta se necessário
+        check_client_timeouts(sock, clients);
+    }
+}
 
 // Verifica se dois endereços de cliente são iguais
 bool are_addresses_equal(const sockaddr_in& addr1, const sockaddr_in& addr2) {
@@ -30,6 +85,7 @@ void broadcast_server_message(int sock, const std::string& message,
                               int exclude_client_index = -1) {
     // Declara um pacote de mensagem do servidor
     std::vector<char> msg_packet;
+    msg_packet.reserve(1 + message.size());
     msg_packet.push_back(SERVER_MESSAGE);  // Tipo de pacote
     // Insere a mensagem no pacote, a partir do segundo byte
     msg_packet.insert(msg_packet.end(), message.begin(), message.end());
@@ -96,7 +152,7 @@ void process_login(int sock, std::string_view name,
 }
 
 // Processa um pacote de áudio
-void process_audio_data(int sock, std::string_view audio_data,
+void process_audio_data(int sock, std::string_view audio_packet,
                         const sockaddr_in& sender_addr, ClientInfo clients[2]) {
     // Encontra o índice do cliente que enviou o pacote de áudio
     int sender_idx = -1;
@@ -119,24 +175,18 @@ void process_audio_data(int sock, std::string_view audio_data,
 
     // Se o outro cliente está ativo, retransmite o pacote de áudio
     if (clients[receiver_idx].is_active) {
-        // Pacote malformatado
-        if (audio_data.size() > AUDIO_BUFFER_SIZE) {
-            return;
-        }
-
-        std::vector<char> audio_packet;
-        audio_packet.reserve(1 + audio_data.size());
-        audio_packet.push_back(AUDIO_DATA);
-        audio_packet.insert(audio_packet.end(), audio_data.begin(),
-                            audio_data.end());
-
-        send_packet(sock, audio_packet, clients[receiver_idx].address,
-                    clients[receiver_idx].address_len);
+        sendto(sock, audio_packet.data(), audio_packet.size(), 0,
+               (sockaddr*)&clients[receiver_idx].address,
+               clients[receiver_idx].address_len);
+    } else {
+        char pong_packet = KEEPALIVE_PONG;
+        sendto(sock, &pong_packet, sizeof(pong_packet), 0,
+               (sockaddr*)&sender_addr, sizeof(sender_addr));
     }
 }
 
 // Lida com pacotes recebidos e retransmite para os clientes conectados
-void handle_received_packet(int sock, const std::vector<char>& buffer,
+void handle_received_packet(int sock, const std::string_view& buffer,
                             const sockaddr_in& sender_addr,
                             socklen_t sender_len, ClientInfo clients[2]) {
     // Pacote vazio ou inválido
@@ -158,7 +208,7 @@ void handle_received_packet(int sock, const std::vector<char>& buffer,
             break;
         // Pacote de áudio
         case AUDIO_DATA:
-            process_audio_data(sock, data, sender_addr, clients);
+            process_audio_data(sock, buffer, sender_addr, clients);
             break;
         // Pacote de descobrimento
         case DISCOVERY_REQUEST: {
@@ -168,6 +218,24 @@ void handle_received_packet(int sock, const std::vector<char>& buffer,
             char response_packet = DISCOVERY_RESPONSE;
             sendto(sock, &response_packet, sizeof(response_packet), 0,
                    (sockaddr*)&sender_addr, sender_len);
+            break;
+        }
+        // Pacote de logout
+        case LOGOUT_NOTICE: {
+            for (int i = 0; i < 2; ++i) {
+                if (clients[i].is_active &&
+                    are_addresses_equal(clients[i].address, sender_addr)) {
+                    print_client_info("Cliente desconectado (logout):",
+                                      clients[i].address, clients[i].name);
+
+                    std::string leave_msg =
+                        "[SERVER] '" + clients[i].name + "' saiu da chamada.";
+                    clients[i].is_active = false;
+
+                    broadcast_server_message(sock, leave_msg, clients);
+                    break;
+                }
+            }
             break;
         }
         default:

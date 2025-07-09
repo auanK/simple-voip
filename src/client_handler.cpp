@@ -13,6 +13,7 @@ using socklen_t = int;
 
 #include <atomic>
 #include <condition_variable>
+#include <future>
 #include <iostream>
 #include <mutex>
 #include <queue>
@@ -65,12 +66,12 @@ std::string discover_server_on_network() {
 
     // Definir um timeout para a resposta do servidor
 #ifdef _WIN32
-    DWORD timeout = 5 * 1000;  // 5 segundos de timeout
+    DWORD timeout = DISCOVERY_TIMEOUT_SEC * 1000;
     setsockopt(broadcast_sock, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout,
                sizeof(timeout));
 #else
     // Linux espera uma struct timeval
-    struct timeval tv = {5, 0};  // 5 segundos de timeout
+    struct timeval tv = {DISCOVERY_TIMEOUT_SEC, 0};
     setsockopt(broadcast_sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 #endif
 
@@ -165,7 +166,7 @@ void send_thread_func(int sock, const sockaddr_in& server_addr) {
 }
 
 // Thread que recebe dados do servidor
-void receive_thread_func(int sock) {
+void receive_thread_func(int sock, std::promise<void> connection_promise) {
     // Buffer para armazenar os dados recebidos do servidor.
     std::vector<char> receive_buffer(1 + AUDIO_BUFFER_SIZE);
     // Flag para verificar se a conexão foi confirmada.
@@ -192,13 +193,30 @@ void receive_thread_func(int sock) {
                 is_timeout = true;
             }
 #endif
-            // Desconecta o cliente como consequência.
-            if (is_timeout) {
-                std::cerr << (connection_confirmed
-                                  ? "\n[INFO] Desconectado por inatividade."
-                                  : "[FALHA] Servidor não respondeu.")
+            // A conexão caiu
+            if (connection_confirmed) {
+                std::cerr << "\n[INFO] Conexão perdida. O servidor desconectou."
                           << std::endl;
             }
+            // A tentativa de conexão inicial falhou.
+            else {
+                if (is_timeout) {
+                    std::cerr << "\n[FALHA] O servidor não respondeu."
+                              << std::endl;
+                } else {
+                    // Outro erro na rede
+                    perror("Erro em recvfrom");
+                }
+
+                // Notifica a main thread sobre a falha na conexão inicial.
+                try {
+                    connection_promise.set_exception(std::make_exception_ptr(
+                        std::runtime_error("Falha ao conectar")));
+                } catch (const std::future_error&) {
+                }
+            }
+
+            // Declara que o programa não deve continuar
             running = false;
             break;
         }
@@ -216,6 +234,9 @@ void receive_thread_func(int sock) {
             (type == LOGIN_OK || type == SERVER_MESSAGE)) {
             connection_confirmed = true;
             std::cout << "\n*** Conexão estabelecida! ***" << std::endl;
+
+            // Cumpre a promessa para notificar a thread principal
+            connection_promise.set_value();
         }
 
         // Com base no tipo do pacote, processa os dados recebidos.
@@ -240,14 +261,23 @@ void receive_thread_func(int sock) {
             // Imprime a mensagem de servidor cheio e encerra o cliente.
             case SERVER_FULL:
                 std::cerr << "[INFO] O servidor está cheio." << std::endl;
+                try {
+                    connection_promise.set_exception(std::make_exception_ptr(
+                        std::runtime_error("Servidor cheio")));
+                } catch (const std::future_error&) {
+                }
+
                 running = false;
+                break;
+            // Caso seja um pacote de ping, ignora.
+            case KEEPALIVE_PONG:
                 break;
             default:
                 break;
         }
     }
     cv.notify_all();  // Notifica a todas as threads
-    std::cout << "Recebimento de áudio terminado." << std::endl;
+    std::cout << "Recepção de áudio terminada." << std::endl;
 }
 
 // Thread que reproduz o áudio recebido
