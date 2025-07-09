@@ -1,10 +1,17 @@
 #include "client_handler.h"
 
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+using socklen_t = int;
+#else
 #include <fcntl.h>
 #include <unistd.h>
 
-#include <atomic>
 #include <cerrno>
+#endif
+
+#include <atomic>
 #include <condition_variable>
 #include <iostream>
 #include <mutex>
@@ -39,16 +46,33 @@ std::string discover_server_on_network() {
 
     // Habilitar a opção de broadcast no socket
     int broadcast_enable = 1;
+#ifdef _WIN32
+    if (setsockopt(broadcast_sock, SOL_SOCKET, SO_BROADCAST,
+                   (const char*)&broadcast_enable,
+                   sizeof(broadcast_enable)) < 0) {
+#else
     if (setsockopt(broadcast_sock, SOL_SOCKET, SO_BROADCAST, &broadcast_enable,
                    sizeof(broadcast_enable)) < 0) {
+#endif
         perror("Erro ao configurar socket para broadcast");
+#ifdef _WIN32
+        closesocket(broadcast_sock);
+#else
         close(broadcast_sock);
+#endif
         return "";
     }
 
     // Definir um timeout para a resposta do servidor
+#ifdef _WIN32
+    DWORD timeout = 5 * 1000;  // 5 segundos de timeout
+    setsockopt(broadcast_sock, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout,
+               sizeof(timeout));
+#else
+    // Linux espera uma struct timeval
     struct timeval tv = {5, 0};  // 5 segundos de timeout
     setsockopt(broadcast_sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+#endif
 
     // Declara a estrutura de endereço para o broadcast
     sockaddr_in broadcast_addr{};
@@ -76,8 +100,12 @@ std::string discover_server_on_network() {
         recvfrom(broadcast_sock, response_buffer, sizeof(response_buffer), 0,
                  (sockaddr*)&server_response_addr, &server_addr_len);
 
-    // Fecha o socket de broadcast após receber a resposta ou timeout.
+// Fecha o socket de broadcast após receber a resposta ou timeout.
+#ifdef _WIN32
+    closesocket(broadcast_sock);
+#else
     close(broadcast_sock);
+#endif
 
     // Se foi um pacote válido e o primeiro byte é DISCOVERY_RESPONSE,
     // extrai o IP do servidor e retorna.
@@ -92,6 +120,8 @@ std::string discover_server_on_network() {
     return "";
 }
 
+#ifdef __linux__
+#include <fcntl.h>
 // Função para suprimir erros do ALSA.
 void suppress_alsa_errors(bool suppress) {
     static int stderr_original_fd = -1;
@@ -107,6 +137,7 @@ void suppress_alsa_errors(bool suppress) {
         close(stderr_original_fd);
     }
 }
+#endif
 
 // Thread que envia áudio para o servidor
 void send_thread_func(int sock, const sockaddr_in& server_addr) {
@@ -151,13 +182,23 @@ void receive_thread_func(int sock) {
         // Se nenhum pacote válido foi recebido.
         if (n <= 0) {
             // Verifica a causa do erro.
+            bool is_timeout = false;
+#ifdef _WIN32
+            if (WSAGetLastError() == WSAEWOULDBLOCK) {
+                is_timeout = true;
+            }
+#else
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                is_timeout = true;
+            }
+#endif
+            // Desconecta o cliente como consequência.
+            if (is_timeout) {
                 std::cerr << (connection_confirmed
                                   ? "\n[INFO] Desconectado por inatividade."
                                   : "[FALHA] Servidor não respondeu.")
                           << std::endl;
             }
-            // Desconecta o cliente como consequência.
             running = false;
             break;
         }

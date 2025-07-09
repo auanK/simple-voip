@@ -1,4 +1,13 @@
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#pragma comment(lib, "ws2_32.lib")
+using socklen_t = int;
+#else
+#include <netinet/in.h>
+#include <sys/socket.h>
 #include <unistd.h>
+#endif
 
 #include <iostream>
 #include <vector>
@@ -8,6 +17,15 @@
 
 // Função principal do servidor
 int main() {
+#ifdef _WIN32
+    WSADATA wsaData;
+    int result = WSAStartup(MAKEWORD(2, 2), &wsaData);
+    if (result != 0) {
+        std::cerr << "WSAStartup failed: " << result << std::endl;
+        return 1;
+    }
+#endif
+
     // Cria o socket
     int sock = socket(AF_INET, SOCK_DGRAM, 0);
     if (sock < 0) {
@@ -24,7 +42,11 @@ int main() {
     // Tenta bindar o socket ao endereço e porta especificados
     if (bind(sock, (sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
         perror("Erro ao vincular o socket");
+#ifdef _WIN32
+        closesocket(sock);
+#else
         close(sock);
+#endif
         return 1;
     }
 
@@ -73,7 +95,13 @@ int main() {
         check_client_timeouts(sock, clients);
     }
 
-    // Fecha o socket antes de sair
+// Fecha o socket antes de sair
+#ifdef _WIN32
+    closesocket(sock);
+    WSACleanup();
+#else
     close(sock);
+#endif
+
     return 0;
 }

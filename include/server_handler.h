@@ -1,6 +1,11 @@
 #pragma once
 
+#ifdef _WIN32
+#include <winsock2.h>
+using socklen_t = int;
+#else
 #include <arpa/inet.h>
+#endif
 
 #include <chrono>
 #include <string>

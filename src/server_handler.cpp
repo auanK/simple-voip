@@ -1,6 +1,11 @@
 #include "server_handler.h"
 
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
 #include <unistd.h>
+#endif
 
 #include <cstring>
 #include <iostream>
