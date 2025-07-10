@@ -20,7 +20,7 @@ constexpr int AUDIO_BUFFER_SIZE =
 constexpr int PORT = 12345;
 
 // Tempo máximo de espera para receber pacotes do servidor
-constexpr int CLIENT_TIMEOUT_SEC = 15;
+constexpr int CLIENT_TIMEOUT_SEC = 1;
 
 // Define o tamanho máximo para o nome do cliente
 constexpr int MAX_NAME_LENGTH = 50;

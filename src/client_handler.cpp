@@ -180,6 +180,10 @@ void receive_thread_func(int sock, std::promise<void> connection_promise) {
         ssize_t n = recvfrom(sock, receive_buffer.data(), receive_buffer.size(),
                              0, nullptr, nullptr);
 
+        if (!running) {
+            break;
+        }
+
         // Se nenhum pacote válido foi recebido.
         if (n <= 0) {
             // Verifica a causa do erro.
@@ -202,7 +206,8 @@ void receive_thread_func(int sock, std::promise<void> connection_promise) {
                 } else {
                     perror("Erro de rede fatal. Encerrando");
                 }
-                std::exit(1);
+                running = false;
+                break;
             }
             // A tentativa de conexão inicial falhou.
             else {

@@ -142,14 +142,27 @@ int main(int argc, char* argv[]) {
     // Declara as threads de envio e reprodução.
     std::thread sender, player;
 
+    // Declara a thread de input para aguardar o usuário pressionar Enter
+    std::thread input_thread;
+
     try {
         // Esperando a thread de recebimento confirmar a conexão com o servidor.
         std::cout << "Aguardando confirmação do servidor..." << std::endl;
         connection_future.get();
 
+        // Inicia a thread de input
+        input_thread = std::thread(wait_for_enter);
+
         // Inicia a thread de envio e a thread de reprodução de áudio.
         sender = std::thread(send_thread_func, sock, server_addr);
         player = std::thread(playback_thread_func);
+
+        // Aguarda a thread de input terminar.
+        input_thread.join();
+
+        sendto(sock, "", 1, 0, (sockaddr*)&server_addr,
+               sizeof(server_addr)); 
+                                       
 
     } catch (const std::exception& e) {
         // Se ocorrer um erro ao estabelecer a conexão, exibe a mensagem de erro
@@ -167,17 +180,6 @@ int main(int argc, char* argv[]) {
         close(sock);
 #endif
         return 1;
-    }
-
-    // Inicia a thread que aguarda o usuário pressionar Enter para encerrar o
-    // programa.
-    std::thread input_thread(wait_for_enter);
-    input_thread.detach();
-
-    // Dorme a thread principal a cada 1000 milissegundos para economizar
-    // recursos do sistema.
-    while (running) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
     }
 
     // Informa para o servidor que o cliente vai se desconectar.
